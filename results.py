@@ -13,26 +13,34 @@ import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 import requests
 
 FOOTBALL_DATA_TOKEN = os.environ.get("FOOTBALL_DATA_TOKEN")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 COMPETITION_CODE = "WC"  # FIFA World Cup, per football-data.org
+GREEK_TZ = ZoneInfo("Europe/Athens")  # handles EET/EEST automatically
 
 # Optional: override the date for testing, e.g. "2026-06-15"
 DEBUG_DATE = os.environ.get("DEBUG_DATE")
 
 
 def get_target_date():
-    """Returns the UTC date string for 'yesterday' relative to now.
+    """Returns yesterday's date string, using the GREEK calendar day.
 
-    Since this script runs at 06:00 UTC (09:00 Greek time), the matches
-    we want results for happened on the previous UTC calendar date.
+    The script runs at 06:00 UTC, which is 09:00 Greek time (EEST) or
+    08:00 (EET in winter) — either way, already well into "today" in
+    Greek time. We convert to Greek time first, THEN subtract a day,
+    so the result matches what a person in Greece would call "yesterday" —
+    rather than naively subtracting a day from the UTC date, which can be
+    off by one during the few hours after UTC midnight but before Greek
+    midnight.
     """
     if DEBUG_DATE:
         return DEBUG_DATE
-    yesterday = datetime.now(timezone.utc) - timedelta(days=1)
-    return yesterday.strftime("%Y-%m-%d")
+    now_greek = datetime.now(GREEK_TZ)
+    yesterday_greek = now_greek - timedelta(days=1)
+    return yesterday_greek.strftime("%Y-%m-%d")
 
 
 def fetch_matches(date_str):
