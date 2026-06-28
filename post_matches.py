@@ -8,6 +8,7 @@ Runs daily via GitHub Actions (see .github/workflows/daily.yml).
 
 import os
 import sys
+import time
 from datetime import datetime, timezone
 import requests
 
@@ -88,15 +89,14 @@ def format_match(match):
     return f"{emoji} {result}  ·  {time_part}  ·  _{stage_label}_"
 
 
-def build_message(date_str, matches):
+def build_header(date_str, matches):
     pretty_date = datetime.strptime(date_str, "%Y-%m-%d").strftime("%A, %B %d, %Y")
     header = f"🏆 **FIFA World Cup — Matches for {pretty_date}**"
 
     if not matches:
         return f"{header}\n\nNo World Cup matches scheduled today. ⚽"
 
-    lines = [format_match(m) for m in matches]
-    return header + "\n\n" + "\n".join(lines)
+    return header
 
 
 def post_to_discord(content):
@@ -119,10 +119,19 @@ def main():
         print("World Cup competition not accessible right now (likely off-season). Skipping post.")
         return
 
-    message = build_message(date_str, matches)
-    print(message)  # also visible in GitHub Actions logs
-    post_to_discord(message)
-    print("Posted to Discord successfully.")
+    # Post the header first (date + count, or "no matches today")
+    header = build_header(date_str, matches)
+    print(header)
+    post_to_discord(header)
+
+    # Then post each match as its own separate message
+    for match in matches:
+        line = format_match(match)
+        print(line)
+        post_to_discord(line)
+        time.sleep(1)  # stay comfortably under Discord's webhook rate limit
+
+    print(f"Posted header + {len(matches)} match message(s) to Discord successfully.")
 
 
 if __name__ == "__main__":
