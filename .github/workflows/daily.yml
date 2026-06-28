@@ -1,0 +1,28 @@
+name: Post Daily World Cup Matches
+
+on:
+  schedule:
+    # Runs every day at 08:00 UTC. Adjust to your preferred posting time.
+    - cron: "0 8 * * *"
+  workflow_dispatch: {}  # allows manual trigger from the Actions tab for testing
+
+jobs:
+  post-matches:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run script
+        env:
+          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python post_matches.py
