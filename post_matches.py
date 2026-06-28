@@ -53,11 +53,11 @@ def fetch_matches(date_str):
     return data.get("matches", []), None
 
 
-def format_match(match):
+def build_match_embed(match):
+    """Builds a Discord embed that visually resembles a poll/result card."""
     home = match["homeTeam"].get("name") or match["homeTeam"].get("shortName") or "TBD"
     away = match["awayTeam"].get("name") or match["awayTeam"].get("shortName") or "TBD"
     status = match.get("status", "SCHEDULED")
-    emoji = STATUS_EMOJI.get(status, "🕒")
 
     utc_date = match.get("utcDate", "")
     try:
@@ -68,25 +68,55 @@ def format_match(match):
 
     stage = match.get("stage", "").replace("_", " ").title()
     group = match.get("group")
-    stage_label = f"{stage}" + (f" – Group {group[-1]}" if group else "")
+    stage_label = stage + (f" – Group {group[-1]}" if group else "")
 
     score = match.get("score", {}).get("fullTime", {})
     home_goals = score.get("home")
     away_goals = score.get("away")
 
-    if status in ("IN_PLAY", "PAUSED", "FINISHED") and home_goals is not None:
-        result = f"**{home} {home_goals} - {away_goals} {away}**"
-    else:
-        result = f"**{home} vs {away}**"
+    title = f"{home}  vs  {away}"
 
-    if status == "FINISHED":
-        time_part = "Final"
+    fields = []
+
+    if status == "FINISHED" and home_goals is not None:
+        # Build poll-style result rows, winner gets a checkmark
+        if home_goals > away_goals:
+            home_mark, away_mark = "✅", ""
+        elif away_goals > home_goals:
+            home_mark, away_mark = "", "✅"
+        else:
+            home_mark, away_mark = "", ""
+
+        fields = [
+            {"name": f"1️⃣ {home} win", "value": f"**{home_goals}** {home_mark}", "inline": True},
+            {"name": "🤝 Draw", "value": "✅" if home_goals == away_goals else "—", "inline": True},
+            {"name": f"2️⃣ {away} win", "value": f"**{away_goals}** {away_mark}", "inline": True},
+        ]
+        footer_text = f"Final  ·  {stage_label}"
+        color = 0x2ECC71  # green for finished
     elif status in ("IN_PLAY", "PAUSED"):
-        time_part = "Live now"
+        fields = [
+            {"name": f"1️⃣ {home}", "value": f"**{home_goals if home_goals is not None else 0}**", "inline": True},
+            {"name": "🔴 LIVE", "value": "in progress", "inline": True},
+            {"name": f"2️⃣ {away}", "value": f"**{away_goals if away_goals is not None else 0}**", "inline": True},
+        ]
+        footer_text = f"Live now  ·  {stage_label}"
+        color = 0xE74C3C  # red for live
     else:
-        time_part = time_str
+        fields = [
+            {"name": f"1️⃣ {home} win", "value": "Kickoff " + time_str, "inline": True},
+            {"name": "🤝 Draw", "value": "—", "inline": True},
+            {"name": f"2️⃣ {away} win", "value": "Kickoff " + time_str, "inline": True},
+        ]
+        footer_text = f"Scheduled  ·  {stage_label}"
+        color = 0x3498DB  # blue for scheduled
 
-    return f"{emoji} {result}  ·  {time_part}  ·  _{stage_label}_"
+    return {
+        "title": title,
+        "color": color,
+        "fields": fields,
+        "footer": {"text": footer_text},
+    }
 
 
 def build_header(date_str, matches):
@@ -97,6 +127,11 @@ def build_header(date_str, matches):
         return f"{header}\n\nNo World Cup matches scheduled today. ⚽"
 
     return header
+
+
+def post_embed_to_discord(embed):
+    resp = requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]}, timeout=20)
+    resp.raise_for_status()
 
 
 def post_to_discord(content):
@@ -124,11 +159,11 @@ def main():
     print(header)
     post_to_discord(header)
 
-    # Then post each match as its own separate message
+    # Then post each match as its own embed (poll-style card)
     for match in matches:
-        line = format_match(match)
-        print(line)
-        post_to_discord(line)
+        embed = build_match_embed(match)
+        print(embed["title"], "-", embed["footer"]["text"])
+        post_embed_to_discord(embed)
         time.sleep(1)  # stay comfortably under Discord's webhook rate limit
 
     print(f"Posted header + {len(matches)} match message(s) to Discord successfully.")
