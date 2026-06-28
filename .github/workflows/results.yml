@@ -1,0 +1,29 @@
+name: Post Daily World Cup Results
+
+on:
+  schedule:
+    # Runs every day at 06:00 UTC = 09:00 Greek time (EEST, UTC+3).
+    # This is the morning AFTER the matches were played, so all results are final.
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}  # allows manual trigger from the Actions tab for testing
+
+jobs:
+  post-results:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run script
+        env:
+          FOOTBALL_DATA_TOKEN: ${{ secrets.FOOTBALL_DATA_TOKEN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python results.py
