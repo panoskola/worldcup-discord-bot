@@ -19,17 +19,6 @@ COMPETITION_CODE = "WC"  # FIFA World Cup, per football-data.org
 # Optional: override the date for testing, e.g. "2026-06-15"
 DEBUG_DATE = os.environ.get("DEBUG_DATE")
 
-STATUS_EMOJI = {
-    "SCHEDULED": "🕒",
-    "TIMED": "🕒",
-    "IN_PLAY": "🔴",
-    "PAUSED": "⏸️",
-    "FINISHED": "✅",
-    "POSTPONED": "⚠️",
-    "SUSPENDED": "⚠️",
-    "CANCELLED": "❌",
-}
-
 
 def get_today():
     if DEBUG_DATE:
@@ -53,11 +42,16 @@ def fetch_matches(date_str):
     return data.get("matches", []), None
 
 
+def filter_upcoming(matches):
+    """Keep only matches that haven't started yet."""
+    upcoming_statuses = {"SCHEDULED", "TIMED"}
+    return [m for m in matches if m.get("status") in upcoming_statuses]
+
+
 def build_match_embed(match):
-    """Builds a Discord embed that visually resembles a poll/result card."""
+    """Builds a Discord embed (poll-style card) for an upcoming match."""
     home = match["homeTeam"].get("name") or match["homeTeam"].get("shortName") or "TBD"
     away = match["awayTeam"].get("name") or match["awayTeam"].get("shortName") or "TBD"
-    status = match.get("status", "SCHEDULED")
 
     utc_date = match.get("utcDate", "")
     try:
@@ -70,46 +64,15 @@ def build_match_embed(match):
     group = match.get("group")
     stage_label = stage + (f" – Group {group[-1]}" if group else "")
 
-    score = match.get("score", {}).get("fullTime", {})
-    home_goals = score.get("home")
-    away_goals = score.get("away")
-
     title = f"{home}  vs  {away}"
 
-    fields = []
-
-    if status == "FINISHED" and home_goals is not None:
-        # Build poll-style result rows, winner gets a checkmark
-        if home_goals > away_goals:
-            home_mark, away_mark = "✅", ""
-        elif away_goals > home_goals:
-            home_mark, away_mark = "", "✅"
-        else:
-            home_mark, away_mark = "", ""
-
-        fields = [
-            {"name": f"1️⃣ {home} win", "value": f"**{home_goals}** {home_mark}", "inline": True},
-            {"name": "🤝 Draw", "value": "✅" if home_goals == away_goals else "—", "inline": True},
-            {"name": f"2️⃣ {away} win", "value": f"**{away_goals}** {away_mark}", "inline": True},
-        ]
-        footer_text = f"Final  ·  {stage_label}"
-        color = 0x2ECC71  # green for finished
-    elif status in ("IN_PLAY", "PAUSED"):
-        fields = [
-            {"name": f"1️⃣ {home}", "value": f"**{home_goals if home_goals is not None else 0}**", "inline": True},
-            {"name": "🔴 LIVE", "value": "in progress", "inline": True},
-            {"name": f"2️⃣ {away}", "value": f"**{away_goals if away_goals is not None else 0}**", "inline": True},
-        ]
-        footer_text = f"Live now  ·  {stage_label}"
-        color = 0xE74C3C  # red for live
-    else:
-        fields = [
-            {"name": f"1️⃣ {home} win", "value": "Kickoff " + time_str, "inline": True},
-            {"name": "🤝 Draw", "value": "—", "inline": True},
-            {"name": f"2️⃣ {away} win", "value": "Kickoff " + time_str, "inline": True},
-        ]
-        footer_text = f"Scheduled  ·  {stage_label}"
-        color = 0x3498DB  # blue for scheduled
+    fields = [
+        {"name": f"1️⃣ {home} win", "value": "Kickoff " + time_str, "inline": True},
+        {"name": "🤝 Draw", "value": "—", "inline": True},
+        {"name": f"2️⃣ {away} win", "value": "Kickoff " + time_str, "inline": True},
+    ]
+    footer_text = f"Scheduled  ·  {stage_label}"
+    color = 0x3498DB  # blue for scheduled
 
     return {
         "title": title,
@@ -121,10 +84,10 @@ def build_match_embed(match):
 
 def build_header(date_str, matches):
     pretty_date = datetime.strptime(date_str, "%Y-%m-%d").strftime("%A, %B %d, %Y")
-    header = f"🏆 **FIFA World Cup — Matches for {pretty_date}**"
+    header = f"🏆 **FIFA World Cup — Upcoming Matches for {pretty_date}**"
 
     if not matches:
-        return f"{header}\n\nNo World Cup matches scheduled today. ⚽"
+        return f"{header}\n\nNo more upcoming World Cup matches today. ⚽"
 
     return header
 
@@ -153,6 +116,8 @@ def main():
     if error == "no_access":
         print("World Cup competition not accessible right now (likely off-season). Skipping post.")
         return
+
+    matches = filter_upcoming(matches)
 
     # Post the header first (date + count, or "no matches today")
     header = build_header(date_str, matches)
