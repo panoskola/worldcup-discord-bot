@@ -10,11 +10,13 @@ import os
 import sys
 import time
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 import requests
 
 FOOTBALL_DATA_TOKEN = os.environ.get("FOOTBALL_DATA_TOKEN")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 COMPETITION_CODE = "WC"  # FIFA World Cup, per football-data.org
+GREEK_TZ = ZoneInfo("Europe/Athens")  # handles EET/EEST automatically
 
 # Optional: override the date for testing, e.g. "2026-06-15"
 DEBUG_DATE = os.environ.get("DEBUG_DATE")
@@ -55,8 +57,9 @@ def build_match_embed(match):
 
     utc_date = match.get("utcDate", "")
     try:
-        dt = datetime.fromisoformat(utc_date.replace("Z", "+00:00"))
-        time_str = dt.strftime("%H:%M UTC")
+        dt_utc = datetime.fromisoformat(utc_date.replace("Z", "+00:00"))
+        dt_greek = dt_utc.astimezone(GREEK_TZ)
+        time_str = dt_greek.strftime("%H:%M") + " Greek time"
     except Exception:
         time_str = "TBD"
 
