@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-Fetches yesterday's (Greek calendar day) FIFA World Cup results
+Fetches yesterday's (US Eastern calendar day) FIFA World Cup results
 from football-data.org and posts them to a Discord channel via webhook.
 
-Designed to run at 06:00 UTC (= 09:00 Greek time, EEST UTC+3), which is
-after all matches from the previous Greek calendar day have finished.
+Designed to run at 06:00 UTC (~09:00 Greek time), which is comfortably
+after even the latest standard World Cup kickoff slot (9 PM Eastern) has
+finished, so the full previous US Eastern match day's results are final.
+
+Match-day anchoring matches post_matches.py (also US Eastern) for
+consistency between the "upcoming" and "results" posts.
 
 Runs daily via GitHub Actions (see .github/workflows/results.yml).
 """
@@ -19,43 +23,50 @@ import requests
 FOOTBALL_DATA_TOKEN = os.environ.get("FOOTBALL_DATA_TOKEN")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 COMPETITION_CODE = "WC"  # FIFA World Cup, per football-data.org
-GREEK_TZ = ZoneInfo("Europe/Athens")  # handles EET/EEST automatically
+GREEK_TZ = ZoneInfo("Europe/Athens")   # used only to determine "has the run-time arrived yet"
+US_TZ = ZoneInfo("America/New_York")   # used to anchor "match day", matching official schedules
 
 # Optional: override the date for testing, e.g. "2026-06-15"
 DEBUG_DATE = os.environ.get("DEBUG_DATE")
 
 
 def get_target_date():
-    """Returns yesterday's date string, using the GREEK calendar day."""
+    """Returns yesterday's date string, using the US EASTERN calendar day.
+
+    The script runs at 06:00 UTC (~09:00 Greek time). By that point, even
+    the latest standard World Cup slot (9 PM Eastern) has finished — so we
+    can safely report on the full previous US Eastern match day, matching
+    the same day-anchoring used by post_matches.py for consistency.
+    """
     if DEBUG_DATE:
         return DEBUG_DATE
-    now_greek = datetime.now(GREEK_TZ)
-    yesterday_greek = now_greek - timedelta(days=1)
-    return yesterday_greek.strftime("%Y-%m-%d")
+    now_us = datetime.now(US_TZ)
+    yesterday_us = now_us - timedelta(days=1)
+    return yesterday_us.strftime("%Y-%m-%d")
 
 
-def greek_day_utc_range(greek_date_str):
-    """Given a Greek calendar date (YYYY-MM-DD), returns the UTC date range
-    that fully covers that Greek day, as (dateFrom_str, dateTo_str).
+def us_day_utc_range(us_date_str):
+    """Given a US Eastern calendar date (YYYY-MM-DD), returns the UTC date
+    range that fully covers that Eastern day, as (dateFrom_str, dateTo_str).
 
-    A Greek calendar day can span two UTC calendar dates, so we query a day
-    on each side to be safe and filter precisely afterward.
+    A US Eastern day can span two UTC calendar dates, so we query a day on
+    each side to be safe and filter precisely afterward.
     """
-    greek_date = datetime.strptime(greek_date_str, "%Y-%m-%d").replace(tzinfo=GREEK_TZ)
-    date_from = (greek_date - timedelta(days=1)).strftime("%Y-%m-%d")
-    date_to = (greek_date + timedelta(days=1)).strftime("%Y-%m-%d")
+    us_date = datetime.strptime(us_date_str, "%Y-%m-%d").replace(tzinfo=US_TZ)
+    date_from = (us_date - timedelta(days=1)).strftime("%Y-%m-%d")
+    date_to = (us_date + timedelta(days=1)).strftime("%Y-%m-%d")
     return date_from, date_to
 
 
-def filter_to_greek_day(matches, greek_date_str):
-    """Keep only matches whose kickoff, converted to Greek time, falls on
-    the given Greek calendar date."""
+def filter_to_us_day(matches, us_date_str):
+    """Keep only matches whose kickoff, converted to US Eastern time, falls
+    on the given Eastern calendar date."""
     result = []
     for m in matches:
         try:
             dt_utc = datetime.fromisoformat(m["utcDate"].replace("Z", "+00:00"))
-            dt_greek = dt_utc.astimezone(GREEK_TZ)
-            if dt_greek.strftime("%Y-%m-%d") == greek_date_str:
+            dt_us = dt_utc.astimezone(US_TZ)
+            if dt_us.strftime("%Y-%m-%d") == us_date_str:
                 result.append(m)
         except Exception:
             continue
@@ -99,6 +110,7 @@ def build_result_embed(match):
     title = f"{home}  vs  {away}"
 
     if home_goals is None or away_goals is None:
+        # Shouldn't normally happen for a FINISHED match, but guard anyway
         home_goals, away_goals = "?", "?"
         home_mark, away_mark, draw_mark = "", "", ""
     elif home_goals > away_goals:
@@ -151,14 +163,14 @@ def main():
         sys.exit(1)
 
     date_str = get_target_date()
-    date_from, date_to = greek_day_utc_range(date_str)
+    date_from, date_to = us_day_utc_range(date_str)
     matches, error = fetch_matches(date_from, date_to)
 
     if error == "no_access":
         print("World Cup competition not accessible right now (likely off-season). Skipping post.")
         return
 
-    matches = filter_to_greek_day(matches, date_str)
+    matches = filter_to_us_day(matches, date_str)
     matches = filter_finished(matches)
 
     # Post the header first (date + count, or "no matches that day")
