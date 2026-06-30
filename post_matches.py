@@ -16,42 +16,50 @@ import requests
 FOOTBALL_DATA_TOKEN = os.environ.get("FOOTBALL_DATA_TOKEN")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 COMPETITION_CODE = "WC"  # FIFA World Cup, per football-data.org
-GREEK_TZ = ZoneInfo("Europe/Athens")  # handles EET/EEST automatically
+GREEK_TZ = ZoneInfo("Europe/Athens")   # used only to DISPLAY kickoff times
+US_TZ = ZoneInfo("America/New_York")   # used to anchor "match day", matching official schedules
 
 # Optional: override the date for testing, e.g. "2026-06-15"
 DEBUG_DATE = os.environ.get("DEBUG_DATE")
 
 
-def get_today_greek():
-    """Returns today's date string using the GREEK calendar day."""
+def get_today_us():
+    """Returns today's date string using the US EASTERN calendar day.
+
+    Official World Cup schedules (ESPN, FOX, Yahoo, etc.) list matches by
+    US Eastern date, since the tournament is hosted across US/Mexico/Canada.
+    Anchoring to this date means the daily post matches what's commonly
+    understood as "today's matches" — kickoff TIMES are still shown
+    converted to Greek time for readability, but which DAY a match belongs
+    to is decided by Eastern time, not Greek time.
+    """
     if DEBUG_DATE:
         return DEBUG_DATE
-    return datetime.now(GREEK_TZ).strftime("%Y-%m-%d")
+    return datetime.now(US_TZ).strftime("%Y-%m-%d")
 
 
-def greek_day_utc_range(greek_date_str):
-    """Given a Greek calendar date (YYYY-MM-DD), returns the UTC date range
-    that fully covers that Greek day, as (dateFrom_str, dateTo_str).
+def us_day_utc_range(us_date_str):
+    """Given a US Eastern calendar date (YYYY-MM-DD), returns the UTC date
+    range that fully covers that Eastern day, as (dateFrom_str, dateTo_str).
 
-    A Greek calendar day can span two UTC calendar dates (its first ~3 hours,
-    or fewer in winter, fall on the previous UTC date), so we query a day on
+    A US Eastern day can span two UTC calendar dates, so we query a day on
     each side to be safe and filter precisely afterward.
     """
-    greek_date = datetime.strptime(greek_date_str, "%Y-%m-%d").replace(tzinfo=GREEK_TZ)
-    date_from = (greek_date - timedelta(days=1)).strftime("%Y-%m-%d")
-    date_to = (greek_date + timedelta(days=1)).strftime("%Y-%m-%d")
+    us_date = datetime.strptime(us_date_str, "%Y-%m-%d").replace(tzinfo=US_TZ)
+    date_from = (us_date - timedelta(days=1)).strftime("%Y-%m-%d")
+    date_to = (us_date + timedelta(days=1)).strftime("%Y-%m-%d")
     return date_from, date_to
 
 
-def filter_to_greek_day(matches, greek_date_str):
-    """Keep only matches whose kickoff, converted to Greek time, falls on
-    the given Greek calendar date."""
+def filter_to_us_day(matches, us_date_str):
+    """Keep only matches whose kickoff, converted to US Eastern time, falls
+    on the given Eastern calendar date."""
     result = []
     for m in matches:
         try:
             dt_utc = datetime.fromisoformat(m["utcDate"].replace("Z", "+00:00"))
-            dt_greek = dt_utc.astimezone(GREEK_TZ)
-            if dt_greek.strftime("%Y-%m-%d") == greek_date_str:
+            dt_us = dt_utc.astimezone(US_TZ)
+            if dt_us.strftime("%Y-%m-%d") == us_date_str:
                 result.append(m)
         except Exception:
             continue
@@ -117,7 +125,7 @@ def build_match_embed(match):
 
 def build_header(date_str, matches):
     pretty_date = datetime.strptime(date_str, "%Y-%m-%d").strftime("%A, %B %d, %Y")
-    header = f"🏆 **FIFA World Cup — Upcoming Matches for {pretty_date}**"
+    header = f"🏆 **FIFA World Cup — Today's Matches ({pretty_date}) — times shown in Greek time**"
 
     if not matches:
         return f"{header}\n\nNo more upcoming World Cup matches today. ⚽"
@@ -143,15 +151,15 @@ def main():
         print("ERROR: DISCORD_WEBHOOK_URL is not set", file=sys.stderr)
         sys.exit(1)
 
-    date_str = get_today_greek()
-    date_from, date_to = greek_day_utc_range(date_str)
+    date_str = get_today_us()
+    date_from, date_to = us_day_utc_range(date_str)
     matches, error = fetch_matches(date_from, date_to)
 
     if error == "no_access":
         print("World Cup competition not accessible right now (likely off-season). Skipping post.")
         return
 
-    matches = filter_to_greek_day(matches, date_str)
+    matches = filter_to_us_day(matches, date_str)
     matches = filter_upcoming(matches)
 
     # Post the header first (date + count, or "no matches today")
