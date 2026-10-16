@@ -62,3 +62,8 @@ DEBUG_DATE=2026-06-15 python post_matches.py   # optional: pretend it is another
 
 Built for the 2026 World Cup (June–July 2026). The tournament is over, so the scheduled
 workflows can be disabled from the Actions tab.
+
+## Notes
+
+Development was assisted by [Claude](https://claude.ai/), Anthropic's AI model. Design
+decisions, testing in a live Discord server and releases are by the maintainer.
